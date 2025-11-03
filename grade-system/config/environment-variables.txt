@@ -1,0 +1,54 @@
+~ $ aws lambda list-functions --query 'Functions[].{NameFunctionName, EnvEnvironment.Variables}'
+[
+    {
+        Name login-function,
+        Env {
+            TABLE_NAME grades-system-table,
+            JWT_SECRET change-this-to-a-very-long-random-string
+        }
+    },
+    {
+        Name manage-grades,
+        Env {
+            TABLE_NAME grades-system-table
+        }
+    },
+    {
+        Name ModLabRole,
+        Env null
+    },
+    {
+        Name MainMonitoringFunction,
+        Env null
+    },
+    {
+        Name RoleCreationFunction,
+        Env null
+    },
+    {
+        Name RedshiftOverwatch,
+        Env null
+    },
+    {
+        Name get-grades,
+        Env {
+            TABLE_NAME grades-system-table
+        }
+    },
+    {
+        Name RedshiftEventSubscription,
+        Env null
+    },
+    {
+        Name admin-users,
+        Env {
+            TABLE_NAME grades-system-table
+        }
+    },
+    {
+        Name upload-grades,
+        Env {
+            TABLE_NAME grades-system-table
+        }
+    }
+]

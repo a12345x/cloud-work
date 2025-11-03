@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>我的成绩 - 成绩系统</title>
+
+    <!-- 防止 favicon 404 -->
+    <link rel="icon" href="data:,">
+
+    <!-- CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: "Segoe UI", sans-serif;
+        }
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .card-header {
+            background-color: #198754;
+            color: white;
+            font-weight: 600;
+        }
+        .table-striped tbody tr:nth-of-type(odd) {
+            background-color: #f8f9fa;
+        }
+        .user-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .badge {
+            font-size: 0.8em;
+        }
+        #message {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <!-- 用户信息与退出按钮 -->
+        <div class="user-info">
+            <span id="currentUser" class="text-muted"></span>
+            <button id="logoutBtn" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-sign-out-alt"></i> 退出
+            </button>
+        </div>
+
+        <div class="text-center mb-4">
+            <h1><i class="fas fa-chart-line"></i> 我的成绩</h1>
+            <p class="text-muted">查看你的各科成绩记录</p>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-graduation-cap"></i> 学生成绩单</span>
+                <button id="backBtn" class="btn btn-light btn-sm">
+                    <i class="fas fa-arrow-left"></i> 返回
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- 学生信息展示 -->
+                <div class="bg-light p-3 rounded mb-4">
+                    <h5><i class="fas fa-user-circle"></i> 个人信息</h5>
+                    <p><strong>姓名：</strong><span id="studentName">加载中...</span></p>
+                    <p><strong>学号：</strong><span id="studentId">加载中...</span></p>
+                    <p><strong>班级：</strong><span id="studentClass">—</span></p>
+                </div>
+
+                <!-- 消息提示 -->
+                <div id="message" class="alert d-none" role="alert"></div>
+
+                <!-- 成绩表格 -->
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped">
+                        <thead class="table-light">
+                            <tr>
+                                <th>科目</th>
+                                <th>成绩</th>
+                                <th>学期</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gradesTableBody">
+                            <tr><td colspan="3" class="text-center">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✅ JS 模块化脚本 -->
+    <script type="module">
+        import { Api, logout } from './api.js';
+
+        // 显示当前用户信息
+        function showCurrentUser() {
+            const userStr = localStorage.getItem('user');
+            if (!userStr) {
+                alert('用户未登录，请重新登录');
+                logout();
+                return;
+            }
+
+            let user;
+            try {
+                user = JSON.parse(userStr);
+            } catch (e) {
+                console.error('解析用户信息失败:', e);
+                alert('用户数据异常，请重新登录');
+                logout();
+                return;
+            }
+
+            document.getElementById('studentName').textContent = user.name;
+            document.getElementById('studentId').textContent = user.id;
+            document.getElementById('studentClass').textContent = user.class || '—';
+            document.getElementById('currentUser').textContent = `你好，${user.name}`;
+        }
+
+        // 加载学生成绩
+        async function loadGrades() {
+            const tbody = document.getElementById('gradesTableBody');
+            const messageEl = document.getElementById('message');
+            messageEl.classList.add('d-none');
+
+            try {
+                const userStr = localStorage.getItem('user');
+                if (!userStr) throw new Error('用户未登录');
+
+                const user = JSON.parse(userStr);
+                const result = await Api.getGrades(user.id);
+
+                if (result.error) {
+                    messageEl.textContent = result.error;
+                    messageEl.classList.remove('d-none');
+                    return;
+                }
+
+                if (!result.grades || result.grades.length === 0) {
+                    messageEl.textContent = '暂无成绩记录。';
+                    messageEl.classList.remove('d-none');
+                    tbody.innerHTML = '';
+                    return;
+                }
+
+                const rows = result.grades.map(grade => `
+                    <tr>
+                        <td>${grade.subject}</td>
+                        <td><strong class="text-primary">${grade.grade}</strong></td>
+                        <td>${grade.semester}</td>
+                    </tr>
+                `).join('');
+
+                tbody.innerHTML = rows;
+
+            } catch (error) {
+                console.error("加载成绩失败:", error);
+                messageEl.textContent = '网络错误，请检查连接或重试';
+                messageEl.classList.remove('d-none');
+            }
+        }
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', () => {
+            showCurrentUser();
+            loadGrades();
+
+            // ✅ 给退出按钮绑定点击事件
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', () => {
+                    logout(); // 清除登录状态
+                    window.location.href = 'index.html'; // 跳转回首页
+                });
+            }
+
+            // 可选：返回按钮功能（可回到上一页）
+            const backBtn = document.getElementById('backBtn');
+            if (backBtn) {
+                backBtn.addEventListener('click', () => {
+                    history.back(); // 或者设置为 index.html
+                });
+            }
+        });
+
+        // 暴露 logout 到全局（以防其他地方需要）
+        window.logout = logout;
+    </script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

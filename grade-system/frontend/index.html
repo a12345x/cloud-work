@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>成绩管理系统 - 登录</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="icon" href="data:," />
+</head>
+<body>
+    <div class="container">
+        <h1>🎓 成绩管理系统</h1>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="id">学号/工号</label>
+                <input type="text" id="id" required placeholder="请输入ID" />
+            </div>
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" required placeholder="请输入密码" />
+            </div>
+            <button type="submit">登录</button>
+        </form>
+        <div id="message"></div>
+    </div>
+
+    <script type="module">
+        import { Api } from './api.js';
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = document.getElementById('id').value.trim();
+            const password = document.getElementById('password').value;
+            const msg = document.getElementById('message');
+
+            msg.innerHTML = '';
+
+            try {
+                // 清除旧 token
+                localStorage.removeItem('token');
+                const res = await Api.login(id, password);
+
+                console.log('登录响应:', res); // 🔍 调试
+
+                if (res.success) {
+                    const user = res.user;
+                    const token = res.token;
+
+                    // ✅ 严格校验 user 和 token
+                    if (!user || !token) {
+                        throw new Error('登录响应缺少用户或令牌');
+                    }
+
+                    // ✅ 校验 role 是否存在
+                    if (!user.role) {
+                        throw new Error('用户角色信息缺失');
+                    }
+
+                    // ✅ 统一处理 role：转小写 + 去空格
+                    const role = String(user.role).trim().toLowerCase();
+
+                    // 保存
+                    localStorage.setItem('user', JSON.stringify(user));
+                    localStorage.setItem('token', token);
+
+                    // ✅ 跳转逻辑增强
+                    if (role === 'student') {
+                        window.location.href = 'student.html';
+                    } else if (role === 'teacher') {
+                        window.location.href = 'teacher.html';
+                    } else if (role === 'admin') {
+                        window.location.href = 'admin.html';
+                    } else {
+                        msg.innerHTML = `<div class="error">权限不足：未知角色 "${user.role}"</div>`;
+                    }
+                } else {
+                    msg.innerHTML = `<div class="error">${res.message || '登录失败，请检查账号密码'}</div>`;
+                }
+            } catch (err) {
+                console.error('登录异常:', err);
+                msg.innerHTML = `<div class="error">登录失败：${err.message || '网络错误'}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>

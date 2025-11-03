@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# Sensitive Files
+.env
+secrets.json
+credentials.json
+config.json
+
+# OS Generated
+.DS_Store
+.DS_Store?
+.Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.bak

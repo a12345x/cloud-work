@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>教师管理</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        /* ✅ 增加本地样式：按钮禁用状态 */
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        /* ✅ 加载状态 */
+        .loading {
+            color: #007acc;
+            font-style: italic;
+        }
+        /* ✅ 消息容器统一风格 */
+        #message {
+            margin-top: 1rem;
+            min-height: 1.5rem;
+        }
+        /* ✅ 调试信息样式（生产环境可删除） */
+        .debug-info {
+            font-size: 0.8em;
+            color: #666;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            display: none; /* 🔐 发布时设为 none */
+        }
+
+        /* ✅ 可编辑成绩单元格样式 */
+        .editable {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .editable:hover {
+            background-color: #f0f8ff;
+        }
+        .editing {
+            border: 2px solid #007acc;
+            padding: 2px;
+            text-align: center;
+            border-radius: 4px;
+            outline: none;
+            width: 60px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.5rem;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 0.5rem;
+            text-align: left;
+        }
+        th {
+            background-color: #f0f0f0;
+        }
+        .form-group {
+            margin-bottom: 0.8rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-weight: bold;
+        }
+        input, select, button {
+            padding: 0.5rem;
+            font-size: 1rem;
+        }
+        button {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover:not(:disabled) {
+            background-color: #005a99;
+        }
+        .error {
+            color: #d32f2f;
+        }
+        .success {
+            color: #388e3c;
+        }
+        .info {
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <a href="index.html" onclick="logout()">退出</a>
+        </nav>
+        <h1>👨🏫 教师管理后台</h1>
+
+        <!-- 🔍 调试信息：发布前可隐藏 -->
+        <div id="debugInfo" class="debug-info"></div>
+
+        <div id="userInfo"></div>
+
+        <!-- 设置查看期 -->
+        <h2>📅 设置成绩查看期</h2>
+        <div class="form-group">
+            <label for="startTime">开始时间</label>
+            <input type="datetime-local" id="startTime" />
+        </div>
+        <div class="form-group">
+            <label for="endTime">结束时间</label>
+            <input type="datetime-local" id="endTime" />
+        </div>
+        <button type="button" id="setPeriodBtn">设置</button>
+
+        <!-- 上传成绩 -->
+        <h2>📤 上传成绩文件</h2>
+        <div class="form-group">
+            <input type="file" id="gradeFile" accept=".csv,.xlsx" />
+        </div>
+        <button type="button" id="uploadBtn">上传</button>
+
+        <!-- 查看科目成绩 -->
+        <h2>📊 查看科目成绩</h2>
+        <div class="form-group">
+            <label for="subjectSelect">选择科目</label>
+            <select id="subjectSelect">
+                <option value="">-- 请选择科目 --</option>
+            </select>
+        </div>
+        <button type="button" id="queryBtn">查询</button>
+
+        <table id="subjectTable" style="display:none; margin-top: 1rem;">
+            <thead>
+                <tr>
+                    <th>学号</th>
+                    <th>姓名</th>
+                    <th>成绩</th>
+                    <th>学期</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div id="message"></div>
+    </div>
+
+    <!-- ✅ 引入 Papa Parse 用于 CSV 预处理（仅用于字段映射提示，不用于上传） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- ✅ 使用 module 模式导入 -->
+    <script type="module">
+        import { Api, logout } from './api.js';
+
+        // 🔐 安全校验登录状态（增强版）
+        const userRaw = localStorage.getItem('user');
+        const token = localStorage.getItem('token');
+        const debugDiv = document.getElementById('debugInfo');
+
+        // ✅ 开发调试：显示当前 localStorage 状态
+        if (debugDiv) {
+            debugDiv.innerHTML = `
+                <strong>调试信息（发布前请隐藏）:</strong><br>
+                user: ${userRaw ? JSON.stringify(userRaw) : 'null'}<br>
+                token 存在: ${!!token}<br>
+                URL: ${window.location.href}
+            `;
+        }
+
+        // ✅ 检查是否登录
+        if (!userRaw || !token) {
+            if (!userRaw) console.warn('❌ localStorage.user 不存在');
+            if (!token) console.warn('❌ localStorage.token 不存在');
+            alert('请先登录');
+            window.location.href = 'index.html';
+            throw new Error('未登录');
+        }
+
+        let user;
+        try {
+            user = JSON.parse(userRaw);
+        } catch (e) {
+            console.error('❌ 用户信息解析失败:', e);
+            alert('用户数据异常，请重新登录');
+            logout();
+            window.location.href = 'index.html';
+            throw e;
+        }
+
+        // ✅ 严格检查角色：去除空格、转小写，防止 'teacher ' 或 'Teacher'
+        const role = (user.role || '').trim().toLowerCase();
+        if (role !== 'teacher') {
+            console.warn('❌ 角色校验失败:', { rawRole: user.role, normalized: role });
+            alert('权限不足，仅教师可访问');
+            window.location.href = 'index.html';
+            throw new Error('角色不匹配');
+        }
+
+        // ✅ 显示用户信息
+        document.getElementById('userInfo').innerHTML = `
+            <p><strong>教师：</strong>${user.name || '未知'}</p>
+            <p><small>ID: ${user.id || '未知'}</small></p>
+        `;
+
+        let subjects = [];
+
+        // ✅ 加载教师信息（含科目）
+        async function loadTeacherInfo() {
+            const msg = document.getElementById('message');
+            msg.innerHTML = '<div class="loading">正在加载教师信息...</div>';
+
+            try {
+                const res = await Api.getTeacherInfo(user.id);
+                if (res.error) {
+                    throw new Error(res.error);
+                }
+
+                subjects = Array.isArray(res.subjects) ? res.subjects : [];
+                const sel = document.getElementById('subjectSelect');
+                
+                if (subjects.length === 0) {
+                    sel.innerHTML = '<option value="">-- 暂无科目 --</option>';
+                    sel.disabled = true;
+                } else {
+                    sel.innerHTML = '<option value="">-- 请选择科目 --</option>';
+                    subjects.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s;
+                        opt.textContent = s;
+                        sel.appendChild(opt);
+                    });
+                    sel.disabled = false;
+                }
+
+                msg.innerHTML = '';
+            } catch (err) {
+                msg.innerHTML = `<div class="error">加载失败: ${err.message}</div>`;
+                console.error('❌ 加载教师信息失败:', err);
+            }
+        }
+
+        // ✅ 设置查看期
+        async function setViewPeriod() {
+            const startInput = document.getElementById('startTime').value;
+            const endInput = document.getElementById('endTime').value;
+            const btn = document.getElementById('setPeriodBtn');
+            const msg = document.getElementById('message');
+
+            if (!startInput || !endInput) {
+                msg.innerHTML = `<div class="error">请填写完整的开始和结束时间</div>`;
+                return;
+            }
+
+            // ✅ 格式化为 ISO 时间（UTC）
+            const start = new Date(startInput).toISOString();
+            const end = new Date(endInput).toISOString();
+
+            if (new Date(end) <= new Date(start)) {
+                msg.innerHTML = `<div class="error">结束时间必须晚于开始时间</div>`;
+                return;
+            }
+
+            // ✅ 防重复提交
+            btn.disabled = true;
+            btn.textContent = '设置中...';
+
+            try {
+                const res = await Api.setViewPeriod(user.id, start, end);
+                if (res.error) throw new Error(res.error);
+
+                msg.innerHTML = `<div class="success">✅ 成功设置成绩查看期！</div>`;
+                // 清空输入框
+                document.getElementById('startTime').value = '';
+                document.getElementById('endTime').value = '';
+            } catch (err) {
+                msg.innerHTML = `<div class="error">❌ 设置失败: ${err.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '设置';
+            }
+        }
+
+        // ✅ 提取公共响应处理逻辑
+        function handleUploadResponse(res, msg, fileInput, btn) {
+            let messageHTML = '';
+
+            if (res.successCount !== undefined) {
+                if (res.failureCount === 0) {
+                    messageHTML = `<div class="success">🎉 成功上传 ${res.successCount} 条成绩！</div>`;
+                } else {
+                    messageHTML = `
+                        <div class="info">⚠️ 已处理 ${res.successCount + res.failureCount} 条，成功: ${res.successCount}，失败: ${res.failureCount}</div>
+                    `;
+                    if (res.failures && res.failures.length > 0) {
+                        messageHTML += `<div class="error"><strong>📌 失败详情：</strong><ul>`;
+                        res.failures.forEach(fail => {
+                            const sid = fail.row?.studentId || '未知';
+                            const err = fail.error || '未知错误';
+                            messageHTML += `<li>学号 <strong>${sid}</strong>: ${err}</li>`;
+                        });
+                        messageHTML += `</ul></div>`;
+                    }
+                }
+                fileInput.value = ''; // 清空文件输入
+            } else {
+                messageHTML = `<div class="error">❌ 上传失败: ${res.error || '未知错误'}</div>`;
+            }
+
+            msg.innerHTML = messageHTML;
+            btn.disabled = false;
+            btn.textContent = '上传';
+        }
+
+        // ✅ 统一文件转 Base64（保持二进制完整性）
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64Data = reader.result.split(',')[1]; // 去掉 data URL 前缀
+                    resolve(base64Data);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file); // ✅ 正确方式，保留原始二进制
+            });
+        }
+
+        // ✅ 上传成绩（统一使用 Base64 上传原始文件）
+        async function uploadGrades() {
+            const fileInput = document.getElementById('gradeFile');
+            const btn = document.getElementById('uploadBtn');
+            const msg = document.getElementById('message');
+
+            if (!fileInput.files[0]) {
+                msg.innerHTML = `<div class="error">请选择文件</div>`;
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const maxSize = 5 * 1024 * 1024; // 5MB
+            if (file.size > maxSize) {
+                msg.innerHTML = `<div class="error">文件过大（最大 5MB）</div>`;
+                return;
+            }
+
+            const validTypes = ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+            if (!validTypes.includes(file.type)) {
+                msg.innerHTML = `<div class="error">仅支持 .csv 或 .xlsx 文件</div>`;
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '上传中...';
+
+            try {
+                // ✅ 统一使用 Base64 上传原始文件
+                const base64 = await fileToBase64(file);
+                const fileType = file.name.endsWith('.xlsx') ? 'xlsx' : 'csv'; // 后端根据扩展名判断
+
+                const res = await Api.uploadGrades(user.id, base64, fileType);
+                handleUploadResponse(res, msg, fileInput, btn);
+            } catch (err) {
+                msg.innerHTML = `<div class="error">文件读取失败，请重试</div>`;
+                btn.disabled = false;
+                btn.textContent = '上传';
+            }
+        }
+
+        // ✅ 保存成绩（调用后端）
+        async function saveGrade(studentId, subject, semester, newGrade) {
+            const msg = document.getElementById('message');
+
+            // ✅ 校验成绩范围
+            const gradeNum = parseFloat(newGrade);
+            if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) {
+                msg.innerHTML = `<div class="error">成绩必须是 0~100 之间的数字</div>`;
+                return false;
+            }
+
+            try {
+                const res = await Api.updateGrade(studentId, subject, gradeNum, semester);
+                if (res.error) {
+                    throw new Error(res.error);
+                }
+                msg.innerHTML = `<div class="success">✅ 成绩已更新</div>`;
+                return true;
+            } catch (err) {
+                msg.innerHTML = `<div class="error">❌ 保存失败: ${err.message}</div>`;
+                return false;
+            }
+        }
+
+        // ✅ 编辑成绩（点击触发）
+        function editGrade(studentId, subject, semester, currentGrade) {
+            const cell = event.target;
+            if (cell.tagName !== 'TD') return;
+
+            // 创建输入框
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.value = currentGrade;
+            input.min = 0;
+            input.max = 100;
+            input.step = 0.5;
+            input.className = 'editing';
+
+            // 保存旧值
+            const oldValue = currentGrade;
+
+            // 替换文本为输入框
+            cell.textContent = '';
+            cell.appendChild(input);
+            input.focus();
+
+            // ✅ 失去焦点时保存
+            async function onBlur() {
+                input.removeEventListener('blur', onBlur);
+                input.removeEventListener('keydown', onKey);
+
+                const newValue = input.value.trim();
+                const saved = await saveGrade(studentId, subject, semester, newValue);
+                if (!saved) {
+                    // 保存失败，恢复原值
+                    cell.innerHTML = `<strong>${oldValue}</strong>`;
+                } else {
+                    cell.innerHTML = `<strong>${newValue}</strong>`;
+                }
+            }
+
+            // ✅ Enter 键保存，Escape 取消
+            function onKey(e) {
+                if (e.key === 'Enter') {
+                    onBlur();
+                } else if (e.key === 'Escape') {
+                    cell.innerHTML = `<strong>${oldValue}</strong>`;
+                    input.remove();
+                }
+            }
+
+            input.addEventListener('blur', onBlur);
+            input.addEventListener('keydown', onKey);
+        }
+
+        // ✅ 查询科目成绩（支持点击编辑）
+        async function loadSubjectGrades() {
+            const subject = document.getElementById('subjectSelect').value;
+            const btn = document.getElementById('queryBtn');
+            const table = document.getElementById('subjectTable');
+            const tbody = table.querySelector('tbody');
+            const msg = document.getElementById('message');
+
+            if (!subject) {
+                msg.innerHTML = `<div class="error">请选择科目</div>`;
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '查询中...';
+
+            try {
+                const res = await Api.getSubjectGrades(user.id, subject);
+                if (res.error) throw new Error(res.error);
+
+                if (!res.grades || res.grades.length === 0) {
+                    msg.innerHTML = `<div class="info">📌 该科目暂无成绩数据。</div>`;
+                    table.style.display = 'none';
+                } else {
+                    tbody.innerHTML = ''; // 清空旧数据
+
+                    res.grades.forEach(g => {
+                        const grade = g.grade != null ? g.grade : '';
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${g.student_id || '-'}</td>
+                            <td>${g.name || '未知'}</td>
+                            <td class="editable" title="点击编辑成绩"><strong>${grade}</strong></td>
+                            <td>${g.semester || '未知'}</td>
+                        `;
+
+                        // ✅ 绑定事件：使用闭包捕获当前 g 的值
+                        tr.querySelector('td.editable').addEventListener('click', () => {
+                            editGrade(g.student_id, subject, g.semester, grade);
+                        });
+
+                        tbody.appendChild(tr);
+                    });
+
+                    table.style.display = 'table';
+                    msg.innerHTML = `<div class="success">共加载 ${res.grades.length} 条成绩</div>`;
+                }
+            } catch (err) {
+                msg.innerHTML = `<div class="error">❌ 查询失败: ${err.message}</div>`;
+                table.style.display = 'none';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '查询';
+            }
+        }
+
+        // ✅ 绑定事件
+        document.getElementById('setPeriodBtn').addEventListener('click', setViewPeriod);
+        document.getElementById('uploadBtn').addEventListener('click', uploadGrades);
+        document.getElementById('queryBtn').addEventListener('click', loadSubjectGrades);
+
+        // ✅ 初始化
+        loadTeacherInfo();
+    </script>
+</body>
+</html>
